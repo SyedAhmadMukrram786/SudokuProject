@@ -38,14 +38,17 @@ public class GameManager : MonoBehaviour
     public int gridSize = 9;
     public int[,] grid, grid1;
     Dictionary<int, int> CounterValue = new Dictionary<int, int>();
+
     [Space]
     [Header("Top Bar Items")]
     public GameObject Backbtn;
     public GameObject Color_Selectbtn;
     public GameObject ColorSelection;
+    [Space]
     [Header("Board Top bar items")]
     public Text Mistakes;
     public Text GameModesTxt;
+
 
 
     public static int RemaningUnfillCellCount
@@ -335,30 +338,70 @@ public class GameManager : MonoBehaviour
 
     public IEnumerator AssignValues_to_Board()
     {
-        Debug.Log("Assign the Value to the Each Cell");
-        int r = -1, c = -1;
+        Debug.Log("Assigning values to each cell...");
+        int lastEmptyRow = -1, lastEmptyCol = -1;
+
+        // Stores the last two affected rows for smooth transitions
+        HashSet<GameObject> previousRowButtons = new HashSet<GameObject>();
+        HashSet<GameObject> secondPreviousRowButtons = new HashSet<GameObject>();
+
         for (int i = gridSize - 1; i >= 0; i--)
         {
-            for (int j = gridSize - 1; j >= 0; j--) 
+            HashSet<GameObject> currentRowButtons = new HashSet<GameObject>();
+
+            for (int j = gridSize - 1; j >= 0; j--)
             {
-                Text textComponent = Board_Btns_BackUp[i, j].transform.GetChild(0).GetComponent<Text>();
+                GameObject btn = Board_Btns_BackUp[i, j];
+                Text textComponent = btn.transform.GetChild(0).GetComponent<Text>();
+
+                currentRowButtons.Add(btn);
+
                 if (grid[i, j] != 0)
+                {
                     textComponent.text = grid[i, j].ToString();
+                    StoreButtonReference(grid[i, j], btn);
+                }
                 else
                 {
-                    r = i; c = j;
-                    Board_Btns_BackUp[i, j].tag = "UnPlaced";
+                    lastEmptyRow = i;
+                    lastEmptyCol = j;
+                    btn.tag = "UnPlaced";
                     textComponent.text = " ";
                 }
             }
-            yield return new WaitForSeconds(0.07f);
+
+            // Animate colors with transitions
+            SetAlphaforSelection(currentRowButtons, _SelectCellColor); // New row
+            yield return new WaitForSeconds(0.004f);
+
+            SetAlphaforSelection(previousRowButtons, _SelectedRowColumnColor); // Previous row
+            yield return new WaitForSeconds(0.003f);
+            SetAlphaforSelection(secondPreviousRowButtons, _CellColor); // Reset two rows back
+
+            // Shift row tracking
+            secondPreviousRowButtons = new HashSet<GameObject>(previousRowButtons);
+            previousRowButtons = new HashSet<GameObject>(currentRowButtons);
         }
-        if (r != -1 && c != -1)
+
+        // Restore affected row colors
+        SetAlphaforSelection(previousRowButtons, _CellColor);
+        SetAlphaforSelection(secondPreviousRowButtons, _CellColor);
+
+        // Automatically select the last empty cell
+        if (lastEmptyRow != -1 && lastEmptyCol != -1)
         {
-            //Board_Btns_BackUp[r, c].transform.GetComponent<Image>().color = _SelectCellColor;            
-            ClickCell(r, c, Board_Btns_BackUp[r, c]);
+            ClickCell(lastEmptyRow, lastEmptyCol, Board_Btns_BackUp[lastEmptyRow, lastEmptyCol]);
         }
     }
+    void SetRowColor(int row, Color color)
+    {
+        for (int j = 0; j < gridSize; j++)
+        {
+            Image img = Board_Btns_BackUp[row, j].GetComponent<Image>();
+            if (img != null) img.color = color;
+        }
+    }
+
 
     public void Assign_Count_to_Bottom_Bar()
     {
@@ -491,6 +534,10 @@ public class GameManager : MonoBehaviour
 
     private HashSet<GameObject> _affectedButtons = new HashSet<GameObject>();
     private HashSet<GameObject> _previousAffectedButtons = new HashSet<GameObject>();
+
+    // Dictionary to store LinkedLists for each number
+    private Dictionary<int, LinkedList<GameObject>> _StoreButtons = new Dictionary<int, LinkedList<GameObject>>();
+
     public void ClickCell(int row, int col, GameObject clickedbtn = null)
     {
         _clicked_btn = clickedbtn;
@@ -498,7 +545,6 @@ public class GameManager : MonoBehaviour
         _column = col;
 
         Debug.LogError($"Expected Value at this Cell: {grid1[_rows, _column]}");
-        //Debug.Log($"Previous Affected btn Count : {_previousAffectedButtons.Count}");
 
         // Reset only previous selection, not all affected buttons
         SetAlphaforSelection(_previousAffectedButtons, _CellColor);
@@ -514,67 +560,59 @@ public class GameManager : MonoBehaviour
 
         foreach (Transform child in clickedbtn.transform.parent)
             _affectedButtons.Add(child.gameObject);
+
         SetAlphaforSelection(_affectedButtons, _SelectedRowColumnColor);
         _previousClickedButton = clickedbtn;
 
         Board_Btns_BackUp[row, col].GetComponent<Image>().color = _SelectCellColor;
-        Same_Color_PopUp(row, col);
-        //Debug.Log($"Affected btn Count : {_affectedButtons.Count}");
-
+        Same_Color_PopUp(grid[row, col]);
     }
 
-    void Same_Color_PopUp(int r, int c)
-    {        
-
-        int targetValue = grid[r, c];
-
-        if (Board_Btns_BackUp[r, c].tag == "Placed")
+    void Same_Color_PopUp(int value)
+    {
+        if (_StoreButtons.TryGetValue(value, out LinkedList<GameObject> buttonsList))
         {
-            for (int i = 0; i < gridSize; i++)
+            foreach (var btn in buttonsList)
             {
-                for (int j = 0; j < gridSize; j++)
-                {
-                    if (grid[i, j] != targetValue) continue;
+                if (btn == null || btn.transform.childCount == 0) continue;
 
-                    GameObject btn = Board_Btns_BackUp[i, j];
-                    if (btn == null || btn.transform.childCount == 0) continue;
+                Image img = btn.GetComponent<Image>();
+                if (img == null) continue;
 
-                    Image img = btn.GetComponent<Image>();
-                    if (img == null) continue;
+                Transform child = btn.transform.GetChild(0);
+                _affectedButtons.Add(btn);
 
-                    Transform child = btn.transform.GetChild(0);
-                    //Debug.Log("Button Name: " + btn.name);
-                    _affectedButtons.Add(btn);
-
-                    child.DOScale(Vector3.one * 1.4f, 0.3f)
-                        .SetEase(Ease.InOutSine)
-                        .SetLoops(3, LoopType.Yoyo)
-                        .OnStart(() => img.color = _SelectCellColor)
-                        .OnComplete(() =>
-                        {
-                            child.localScale = Vector3.one;
-                        });
-                }
+                child.DOScale(Vector3.one * 1.4f, 0.3f)
+                    .SetEase(Ease.InOutSine)
+                    .SetLoops(3, LoopType.Yoyo)
+                    .OnStart(() => img.color = _SelectCellColor)
+                    .OnComplete(() =>
+                    {
+                        child.localScale = Vector3.one;
+                    });
             }
         }
         _previousAffectedButtons = new HashSet<GameObject>(_affectedButtons);
     }
 
+    public void StoreButtonReference(int value, GameObject button)
+    {
+        if (!_StoreButtons.ContainsKey(value))
+            _StoreButtons[value] = new LinkedList<GameObject>();
 
-
-
-
-
+        _StoreButtons[value].AddLast(button);
+    }
+    int GetInputNumberSize(int value)
+    {
+        return _StoreButtons[value].Count;
+    }
     void SetAlphaforSelection(HashSet<GameObject> clicked_btn_data, Color changing_color)
     {
-        int i = 0;
         foreach (GameObject btn in clicked_btn_data)
         {
-            i++;
             Image img = btn.GetComponent<Image>();
             if (img != null) img.color = changing_color;
         }
-        //Debug.LogError("Removing the number Count: " + i);
     }
 
 
@@ -628,7 +666,8 @@ public class GameManager : MonoBehaviour
             _clicked_btn.transform.GetChild(0).GetComponent<Text>().text = grid1[_rows, _column].ToString();
             _clicked_btn.transform.GetChild(0).GetComponent<Text>().color = _TextColor;
             _clicked_btn.tag = "Placed";
-            //_clicked_btn.transform.GetComponent<CellClickHandler>().enabled = false;
+
+            StoreButtonReference(grid[_rows, _column], _clicked_btn);
 
             Text counterText = btn.transform.GetChild(0).GetChild(0).GetComponent<Text>();
             if (CounterValue[clickedNumber] != 0)
@@ -661,6 +700,8 @@ public class GameManager : MonoBehaviour
         Mistakes.text = GlobalValues.Mistakes.ToString() + " / 3";
         if (GlobalValues.Mistakes == 3)
         {
+            Reset();
+            Go_Home();
             Debug.Log("Level Failed");
         }
     }
@@ -669,6 +710,7 @@ public class GameManager : MonoBehaviour
 
     public void LevelCompleted()
     {
+        Reset();
         Debug.Log("Level is Completed");
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
@@ -677,4 +719,16 @@ public class GameManager : MonoBehaviour
         SaveGame();
         SceneManager.LoadSceneAsync(0);
     }
+
+    private void Reset()
+    {
+        GlobalValues.Mistakes = 0;
+        GlobalValues.Game_Category = Game_Category.New;
+    }
+
+    public void AutoSolve()
+    {
+        Solve(0, 0);
+    }  
+    
 }

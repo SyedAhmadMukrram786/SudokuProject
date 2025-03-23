@@ -29,9 +29,9 @@ public class Home : MonoBehaviour
         SceneManager.LoadScene(1);
     }
 
-    public void Set_Game_Mode(string game_Mode)
+    public void Set_Game_Mode(string game_state)
     {
-        GlobalValues.Game_State = game_Mode;
+        GlobalValues.Game_State = game_state;
     }
     public void OpenGameModesSelectionPanel()
     {
