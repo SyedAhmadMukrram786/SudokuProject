@@ -32,6 +32,7 @@ public class GameManager : MonoBehaviour
     [Header("Board Generation Data")]
     public GameObject boxPrefab;
     public GameObject cellPrefab;
+    public GameObject cell1Prefab;
     public Transform gridContainer;
     public GridLayoutGroup gridLayout;
 
@@ -41,9 +42,11 @@ public class GameManager : MonoBehaviour
 
     [Space]
     [Header("Top Bar Items")]
-    public GameObject Backbtn;
-    public GameObject Color_Selectbtn;
-    public GameObject ColorSelection;
+    [SerializeField] GameObject Backbtn;
+    [SerializeField] GameObject Color_Selectbtn;
+    [SerializeField] GameObject ColorSelection;
+    [SerializeField] Button Pausebtn;
+    [SerializeField] Button Resumebtn;
     [Space]
     [Header("Board Top bar items")]
     public Text Mistakes;
@@ -228,15 +231,16 @@ public class GameManager : MonoBehaviour
                 GridLayoutGroup boxLayout = newBox.AddComponent<GridLayoutGroup>();
 
                 // Set cell size based on the parent grid's cell size
-                boxLayout.cellSize = new Vector2(gridLayout.cellSize.x / boxSize, gridLayout.cellSize.y / boxSize);
+                boxLayout.cellSize = new Vector2(gridLayout.cellSize.x / boxSize - 4, gridLayout.cellSize.y / boxSize - 4);
+                //boxLayout.cellSize = new Vector2(106f, 106f);
 
                 // Ensure each box has the correct number of columns
                 boxLayout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
                 boxLayout.constraintCount = boxSize;
 
                 boxLayout.childAlignment = TextAnchor.MiddleCenter;
-                boxLayout.padding = new RectOffset(1, 1, 1, 1); // Optional padding
-
+                //boxLayout.padding = new RectOffset(3, 3, 3, 3); // Optional padding
+                boxLayout.spacing = new Vector2(4, 4);
 
                 for (int x = 0; x < boxSize; x++)
                 {
@@ -338,10 +342,9 @@ public class GameManager : MonoBehaviour
 
     public IEnumerator AssignValues_to_Board()
     {
-        Debug.Log("Assigning values to each cell...");
+        Debug.Log("Assigning values to each cell");
         int lastEmptyRow = -1, lastEmptyCol = -1;
 
-        // Stores the last two affected rows for smooth transitions
         HashSet<GameObject> previousRowButtons = new HashSet<GameObject>();
         HashSet<GameObject> secondPreviousRowButtons = new HashSet<GameObject>();
 
@@ -369,25 +372,20 @@ public class GameManager : MonoBehaviour
                     textComponent.text = " ";
                 }
             }
-
-            // Animate colors with transitions
-            SetAlphaforSelection(currentRowButtons, _SelectCellColor); // New row
+            SetAlphaforSelection(currentRowButtons, _SelectCellColor);
             yield return new WaitForSeconds(0.004f);
 
-            SetAlphaforSelection(previousRowButtons, _SelectedRowColumnColor); // Previous row
+            SetAlphaforSelection(previousRowButtons, _SelectedRowColumnColor);
             yield return new WaitForSeconds(0.003f);
-            SetAlphaforSelection(secondPreviousRowButtons, _CellColor); // Reset two rows back
+            SetAlphaforSelection(secondPreviousRowButtons, _CellColor);
 
-            // Shift row tracking
             secondPreviousRowButtons = new HashSet<GameObject>(previousRowButtons);
             previousRowButtons = new HashSet<GameObject>(currentRowButtons);
         }
 
-        // Restore affected row colors
         SetAlphaforSelection(previousRowButtons, _CellColor);
         SetAlphaforSelection(secondPreviousRowButtons, _CellColor);
 
-        // Automatically select the last empty cell
         if (lastEmptyRow != -1 && lastEmptyCol != -1)
         {
             ClickCell(lastEmptyRow, lastEmptyCol, Board_Btns_BackUp[lastEmptyRow, lastEmptyCol]);
@@ -545,11 +543,7 @@ public class GameManager : MonoBehaviour
         _column = col;
 
         Debug.LogError($"Expected Value at this Cell: {grid1[_rows, _column]}");
-
-        // Reset only previous selection, not all affected buttons
         SetAlphaforSelection(_previousAffectedButtons, _CellColor);
-
-        // Start color animation for row, column, and box
         _affectedButtons.Clear();
 
         for (int j = 0; j < Board_Btns_BackUp.GetLength(1); j++)
@@ -658,8 +652,8 @@ public class GameManager : MonoBehaviour
 
         if (grid1[_rows, _column] == parsedValue && _clicked_btn.tag == "UnPlaced")
         {
+            SaveMove(_rows, _column, grid[_rows, _column]);
             grid[_rows, _column] = grid1[_rows, _column];
-
             if (!int.TryParse(btn.name, out int clickedNumber) || !CounterValue.ContainsKey(clickedNumber)) return;
             CounterValue[clickedNumber]--;
             _clicked_btn.transform.GetChild(0).DOKill();
@@ -705,8 +699,6 @@ public class GameManager : MonoBehaviour
             Debug.Log("Level Failed");
         }
     }
-    #endregion
-
 
     public void LevelCompleted()
     {
@@ -719,6 +711,7 @@ public class GameManager : MonoBehaviour
         SaveGame();
         SceneManager.LoadSceneAsync(0);
     }
+    #endregion
 
     private void Reset()
     {
@@ -729,6 +722,73 @@ public class GameManager : MonoBehaviour
     public void AutoSolve()
     {
         Solve(0, 0);
-    }  
-    
+    }
+
+
+
+    #region ToolbarFunction
+
+    Stack<int[,]> boardstack = new Stack<int[,]>();
+    Stack<(int row, int col, int prevValue)> moveHistory = new Stack<(int, int, int)>();
+    void SaveMove(int row, int col, int prevValue)
+    {
+        moveHistory.Push((row, col, prevValue));
+    }
+    public void UndoLastMove()
+    {
+        if (moveHistory.Count > 0)
+        {
+            var lastMove = moveHistory.Pop();
+            grid[lastMove.row, lastMove.col] = lastMove.prevValue;
+
+            // Update UI
+            Text textComponent = Board_Btns_BackUp[lastMove.row, lastMove.col].transform.GetChild(0).GetComponent<Text>();
+            textComponent.text = lastMove.prevValue == 0 ? " " : lastMove.prevValue.ToString();
+            if (lastMove.prevValue != 0)
+            {
+                Board_Btns_BackUp[lastMove.row, lastMove.col].tag = "Placed";
+                textComponent.text = lastMove.prevValue.ToString();
+                //StoreButtonReference(grid[i, j], btn);
+            }
+            else
+            {
+                Board_Btns_BackUp[lastMove.row, lastMove.col].tag = "UnPlaced";
+                textComponent.text = " ";
+            }
+        }
+        else
+        {
+            Debug.Log("No moves to undo!");
+        }
+    }
+
+    public void Undo()
+    {
+        //grid = boardstack.Pop();
+        StartCoroutine(AssignValues_to_Board());
+    }
+
+
+    public void Erase()
+    {
+        if (_clicked_btn.tag == "UnPlaced")
+        {
+            _clicked_btn.transform.GetChild(0).GetComponent<Text>().text = " ";
+            _clicked_btn.transform.GetChild(0).GetComponent<Text>().color = _TextColor;
+        }
+    }
+
+    public void Pause()
+    {
+        Resumebtn.gameObject.SetActive(true);
+        Pausebtn.gameObject.SetActive(false);
+        Time.timeScale = 0f;
+    }
+    public void Resume()
+    {
+        Time.timeScale = 1f;
+        Pausebtn.gameObject.SetActive(true);
+        Resumebtn.gameObject.SetActive(false);
+    }
+    #endregion
 }
